@@ -1,0 +1,9 @@
+# Reconocimiento Facial - DeepFace ArcFace
+# pip install -r requirements.txt
+
+deepface>=0.0.93
+tf-keras>=2.16.0
+tensorflow>=2.12.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+streamlit>=1.28.0
