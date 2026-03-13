@@ -1,9 +1,7 @@
-
 import streamlit as st
 import cv2
 import numpy as np
 import json
-import time
 import os
 
 CONFIG_PATH = 'config_faces.json'
@@ -144,54 +142,31 @@ def main():
 
     # ── Tab 1: Cámara ─────────────────────────────────────────
     with tab1:
-        st.info(
-            "La cámara en vivo funciona al correr la app **localmente**. "
-            "En Streamlit Cloud usa la pestaña 'Subir Imagen'."
-        )
         col1, col2 = st.columns([3, 1])
         with col1:
-            btn_start = st.button("▶ Iniciar cámara", type="primary")
-            btn_stop  = st.button("⏹ Detener")
-            frame_ph  = st.empty()
+            foto = st.camera_input("📸 Apunta la cámara y toma una foto")
         with col2:
             st.markdown("### 📊 Detecciones")
             info_ph = st.empty()
 
-        if btn_start:
-            cap = cv2.VideoCapture(0)
-            if not cap.isOpened():
-                st.error("No se pudo abrir la cámara.")
+        if foto is not None:
+            data  = np.frombuffer(foto.getvalue(), np.uint8)
+            frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+            with st.spinner("Analizando..."):
+                img_proc, resultados = reconocer(app, embs_ref, frame, umbral)
+
+            col1.image(img_proc, channels='RGB', use_container_width=True)
+
+            if resultados:
+                txt = "".join(
+                    f"{'✅' if r['conocido'] else '❓'} **{r['nombre']}** "
+                    f"— {r['similitud']*100:.0f}%\n\n"
+                    for r in resultados
+                )
+                info_ph.markdown(txt)
             else:
-                st.session_state['running'] = True
-                t_prev = time.time()
-
-                while st.session_state.get('running', False):
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-
-                    img_proc, resultados = reconocer(app, embs_ref, frame, umbral)
-                    t_now = time.time()
-                    fps   = 1.0 / max(t_now - t_prev, 1e-6)
-                    t_prev = t_now
-                    cv2.putText(img_proc, f"FPS: {fps:.1f}", (10, 25),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (180, 180, 180), 2)
-                    frame_ph.image(img_proc, channels='RGB', use_container_width=True)
-
-                    if resultados:
-                        txt = "".join(
-                            f"{'✅' if r['conocido'] else '❓'} **{r['nombre']}** "
-                            f"— {r['similitud']*100:.0f}%\n\n"
-                            for r in resultados
-                        )
-                        info_ph.markdown(txt)
-                    else:
-                        info_ph.markdown("_Sin rostros detectados_")
-
-                    if btn_stop:
-                        st.session_state['running'] = False
-                        break
-                cap.release()
+                info_ph.markdown("_Sin rostros detectados_")
 
     # ── Tab 2: Subir Imagen ───────────────────────────────────
     with tab2:
