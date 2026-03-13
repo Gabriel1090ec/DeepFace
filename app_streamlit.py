@@ -5,17 +5,169 @@ import json
 import os
 
 CONFIG_PATH = 'config_faces.json'
-COLOR_OK    = (34, 197, 94)
-COLOR_UNK   = (239, 68, 68)
 
 st.set_page_config(
-    page_title="Reconocimiento Facial ITSE",
-    page_icon="🎓",
-    layout="wide"
+    page_title="Face Recognition — ITSE",
+    page_icon="",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
-@st.cache_resource(show_spinner="Cargando modelo ArcFace (~170 MB)...")
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, [data-testid="stAppViewContainer"] {
+    background: #0a0a0a;
+    color: #e8e8e8;
+    font-family: 'DM Sans', sans-serif;
+}
+
+[data-testid="stSidebar"] {
+    background: #111111;
+    border-right: 1px solid #222;
+}
+
+[data-testid="stSidebar"] * { color: #e8e8e8 !important; }
+
+h1, h2, h3 {
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+}
+
+.block-container { padding: 2rem 2.5rem; max-width: 1200px; }
+
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent;
+    border-bottom: 1px solid #222;
+    gap: 0;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    color: #666 !important;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    text-transform: uppercase;
+}
+
+.stTabs [aria-selected="true"] {
+    background: transparent !important;
+    color: #e8e8e8 !important;
+    border-bottom: 1px solid #e8e8e8 !important;
+}
+
+.stButton > button {
+    background: #e8e8e8;
+    color: #0a0a0a;
+    border: none;
+    border-radius: 2px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    padding: 0.6rem 1.5rem;
+    text-transform: uppercase;
+    transition: background 0.15s;
+    width: 100%;
+}
+
+.stButton > button:hover { background: #ffffff; }
+
+.stSlider [data-baseweb="slider"] { padding: 0.5rem 0; }
+
+[data-testid="stFileUploader"] {
+    background: #111;
+    border: 1px dashed #333;
+    border-radius: 4px;
+    padding: 1rem;
+}
+
+[data-testid="stCameraInput"] label { color: #666 !important; font-size: 0.8rem; }
+
+.result-card {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.result-card.known { border-left: 3px solid #4ade80; }
+.result-card.unknown { border-left: 3px solid #f87171; }
+
+.result-name {
+    font-family: 'DM Mono', monospace;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #e8e8e8;
+}
+
+.result-score {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 0.25rem;
+}
+
+.person-tag {
+    display: inline-block;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 2px;
+    padding: 0.2rem 0.6rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: #888;
+    margin: 0.15rem;
+}
+
+.stat-box {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.stat-value {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.5rem;
+    color: #e8e8e8;
+}
+
+.stat-label {
+    font-size: 0.72rem;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.1rem;
+}
+
+hr { border-color: #1e1e1e; margin: 1.25rem 0; }
+
+.stSpinner > div { color: #666 !important; }
+
+[data-testid="stImage"] img { border-radius: 4px; }
+
+p, label, .stMarkdown { color: #888 !important; }
+.stMarkdown strong { color: #e8e8e8 !important; }
+
+[data-testid="stMetricValue"] {
+    font-family: 'DM Mono', monospace !important;
+    color: #e8e8e8 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+@st.cache_resource(show_spinner="Cargando modelo...")
 def cargar_recursos():
     from insightface.app import FaceAnalysis
 
@@ -27,13 +179,10 @@ def cargar_recursos():
         for clase, emb in config['embeddings_ref'].items()
     }
 
-    app = FaceAnalysis(
-        name='buffalo_l',
-        providers=['CPUExecutionProvider']
-    )
-    app.prepare(ctx_id=0, det_size=(640, 640))
+    modelo = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
+    modelo.prepare(ctx_id=0, det_size=(640, 640))
 
-    return app, embs_ref, config
+    return modelo, embs_ref, config
 
 
 def similitud_coseno(a, b):
@@ -42,24 +191,19 @@ def similitud_coseno(a, b):
     return float(np.dot(a, b))
 
 
-def reconocer(app, embs_ref, img_bgr, umbral):
-    """
-    Detecta rostros y los reconoce comparando embeddings ArcFace.
-    Retorna imagen anotada y lista de resultados.
-    """
-    img_rgb    = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    faces      = app.get(img_bgr)
+def procesar(modelo, embs_ref, img_bgr, umbral):
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    faces   = modelo.get(img_bgr)
     resultados = []
 
     for face in faces:
-        emb_query = face.normed_embedding
+        emb   = face.normed_embedding
         x1, y1, x2, y2 = face.bbox.astype(int)
 
-        # Comparar contra todos los perfiles
         mejor_nombre = 'Desconocido'
         mejor_sim    = -1.0
-        for nombre, emb_ref in embs_ref.items():
-            sim = similitud_coseno(emb_query, emb_ref)
+        for nombre, ref in embs_ref.items():
+            sim = similitud_coseno(emb, ref)
             if sim > mejor_sim:
                 mejor_sim    = sim
                 mejor_nombre = nombre
@@ -67,140 +211,131 @@ def reconocer(app, embs_ref, img_bgr, umbral):
         if mejor_sim < umbral:
             mejor_nombre = 'Desconocido'
 
-        es_conocido = mejor_nombre != 'Desconocido'
-        color       = COLOR_OK if es_conocido else COLOR_UNK
+        conocido = mejor_nombre != 'Desconocido'
+        color    = (74, 222, 128) if conocido else (248, 113, 113)
 
-        # Dibujar bounding box
         cv2.rectangle(img_rgb, (x1, y1), (x2, y2), color, 2)
-
-        # Etiqueta
         etiqueta = f"{mejor_nombre}  {mejor_sim*100:.0f}%"
-        (tw, th), _ = cv2.getTextSize(
-            etiqueta, cv2.FONT_HERSHEY_DUPLEX, 0.65, 1
-        )
-        cv2.rectangle(img_rgb,
-                      (x1, y1 - th - 10), (x1 + tw + 6, y1),
-                      color, -1)
+        (tw, th), _ = cv2.getTextSize(etiqueta, cv2.FONT_HERSHEY_DUPLEX, 0.6, 1)
+        cv2.rectangle(img_rgb, (x1, y1 - th - 10), (x1 + tw + 6, y1), color, -1)
         cv2.putText(img_rgb, etiqueta, (x1 + 3, y1 - 5),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.65, (255, 255, 255), 1)
+                    cv2.FONT_HERSHEY_DUPLEX, 0.6, (10, 10, 10), 1)
 
         resultados.append({
             'nombre':    mejor_nombre,
             'similitud': mejor_sim,
-            'conocido':  es_conocido
+            'conocido':  conocido
         })
 
     return img_rgb, resultados
 
 
-def main():
-    st.title("🎓 Reconocimiento Facial — ITSE")
-    st.markdown(
-        "**InsightFace ArcFace** (ResNet-100, ONNX) — "
-        "red neuronal preentrenada con 5M caras."
-    )
+def tarjeta_resultado(r):
+    cls   = "known" if r['conocido'] else "unknown"
+    nombre = r['nombre']
+    score  = f"{r['similitud']*100:.1f}% similitud"
+    st.markdown(f"""
+    <div class="result-card {cls}">
+        <div class="result-name">{nombre}</div>
+        <div class="result-score">{score}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    try:
-        app, embs_ref, config = cargar_recursos()
-    except FileNotFoundError:
-        st.error(f"No se encontró `{CONFIG_PATH}`.")
-        st.info("Ejecuta `registrar_personas.py` en Colab y sube el archivo a GitHub.")
-        return
-    except Exception as e:
-        st.error(f"Error al cargar: {e}")
-        return
 
-    clases = config.get('clases', [])
+# ── App ────────────────────────────────────────────────────────
 
-    # ── Sidebar ───────────────────────────────────────────────
-    with st.sidebar:
-        st.header("⚙️ Configuración")
-        umbral = st.slider(
-            "Umbral de similitud",
-            min_value=0.10, max_value=0.90,
-            value=float(config.get('umbral', 0.40)),
-            step=0.05,
-            help="Sube para ser más estricto. Baja si no reconoce a nadie."
-        )
-        st.markdown("---")
-        st.markdown("### Personas registradas")
-        for c in clases:
-            st.markdown(f"✅ {c}")
-        st.markdown("---")
-        st.info(
-            "🟢 Verde = reconocido\n\n"
-            "🔴 Rojo = desconocido\n\n"
-            "% = similitud con el perfil"
-        )
+try:
+    modelo, embs_ref, config = cargar_recursos()
+    cargado = True
+except FileNotFoundError:
+    cargado = False
+except Exception as e:
+    st.error(str(e))
+    cargado = False
 
-    st.success(
-        f"✅ Modelo: **ArcFace ResNet-100** (ONNX) | "
-        f"{len(clases)} persona(s) registradas"
-    )
+clases = config.get('clases', []) if cargado else []
 
-    tab1, tab2 = st.tabs(["📷 Cámara en Vivo", "🖼️ Subir Imagen"])
+# Sidebar
+with st.sidebar:
+    st.markdown("### Face Recognition")
+    st.markdown("---")
 
-    # ── Tab 1: Cámara ─────────────────────────────────────────
-    with tab1:
-        col1, col2 = st.columns([3, 1])
+    if cargado:
+        col1, col2 = st.columns(2)
         with col1:
-            foto = st.camera_input("📸 Apunta la cámara y toma una foto")
+            st.markdown(f'<div class="stat-box"><div class="stat-value">{len(clases)}</div><div class="stat-label">personas</div></div>', unsafe_allow_html=True)
         with col2:
-            st.markdown("### 📊 Detecciones")
-            info_ph = st.empty()
+            st.markdown(f'<div class="stat-box"><div class="stat-value">512</div><div class="stat-label">dim emb.</div></div>', unsafe_allow_html=True)
 
-        if foto is not None:
-            data  = np.frombuffer(foto.getvalue(), np.uint8)
-            frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    st.markdown("**Umbral de similitud**")
+    umbral = st.slider(
+        "", min_value=0.10, max_value=0.90,
+        value=float(config.get('umbral', 0.40)) if cargado else 0.40,
+        step=0.05, label_visibility="collapsed"
+    )
+    st.caption("Sube el valor para ser mas estricto.")
 
-            with st.spinner("Analizando..."):
-                img_proc, resultados = reconocer(app, embs_ref, frame, umbral)
+    st.markdown("---")
+    st.markdown("**Personas registradas**")
+    if cargado:
+        tags = "".join(f'<span class="person-tag">{c}</span>' for c in clases)
+        st.markdown(tags, unsafe_allow_html=True)
+    else:
+        st.caption("Modelo no cargado.")
 
-            col1.image(img_proc, channels='RGB', use_container_width=True)
+    st.markdown("---")
+    st.caption("ArcFace ResNet-100 · ONNX · InsightFace")
 
+
+# Main
+st.markdown("# Face Recognition")
+st.markdown("ArcFace ResNet-100 — reconocimiento por similitud de embeddings.")
+st.markdown("---")
+
+if not cargado:
+    st.warning("No se encontro `config_faces.json`. Ejecuta `registrar_personas.py` en Colab y sube el archivo al repositorio.")
+    st.stop()
+
+tab1, tab2 = st.tabs(["Camara", "Subir imagen"])
+
+with tab1:
+    col_img, col_res = st.columns([3, 1])
+    with col_img:
+        foto = st.camera_input("", label_visibility="collapsed")
+    with col_res:
+        st.markdown("**Resultado**")
+        resultado_ph = st.empty()
+
+    if foto is not None:
+        data  = np.frombuffer(foto.getvalue(), np.uint8)
+        frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        with st.spinner("Procesando..."):
+            img_proc, resultados = procesar(modelo, embs_ref, frame, umbral)
+        col_img.image(img_proc, channels='RGB', use_container_width=True)
+        with resultado_ph.container():
             if resultados:
-                txt = "".join(
-                    f"{'✅' if r['conocido'] else '❓'} **{r['nombre']}** "
-                    f"— {r['similitud']*100:.0f}%\n\n"
-                    for r in resultados
-                )
-                info_ph.markdown(txt)
+                for r in resultados:
+                    tarjeta_resultado(r)
             else:
-                info_ph.markdown("_Sin rostros detectados_")
+                st.caption("Sin rostros detectados.")
 
-    # ── Tab 2: Subir Imagen ───────────────────────────────────
-    with tab2:
-        archivo = st.file_uploader(
-            "Sube una foto para reconocer",
-            type=['jpg', 'jpeg', 'png']
-        )
-        if archivo:
-            data  = np.frombuffer(archivo.read(), np.uint8)
-            frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+with tab2:
+    col_img2, col_res2 = st.columns([3, 1])
+    with col_img2:
+        archivo = st.file_uploader("", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
+    with col_res2:
+        st.markdown("**Resultado**")
+        resultado_ph2 = st.empty()
 
-            with st.spinner("Analizando..."):
-                img_proc, resultados = reconocer(app, embs_ref, frame, umbral)
-
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                st.image(img_proc, channels='RGB', use_container_width=True)
-            with c2:
-                st.markdown("### Resultados")
-                if resultados:
-                    for r in resultados:
-                        if r['conocido']:
-                            st.success(
-                                f"✅ **{r['nombre']}**\n\n"
-                                f"Similitud: {r['similitud']*100:.0f}%"
-                            )
-                        else:
-                            st.warning(
-                                f"❓ Desconocido\n\n"
-                                f"Similitud máx: {r['similitud']*100:.0f}%"
-                            )
-                else:
-                    st.info("No se detectaron rostros en la imagen.")
-
-
-if __name__ == '__main__':
-    main()
+    if archivo is not None:
+        data  = np.frombuffer(archivo.read(), np.uint8)
+        frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        with st.spinner("Procesando..."):
+            img_proc, resultados = procesar(modelo, embs_ref, frame, umbral)
+        col_img2.image(img_proc, channels='RGB', use_container_width=True)
+        with resultado_ph2.container():
+            if resultados:
+                for r in resultados:
+                    tarjeta_resultado(r)
+            else:
+                st.caption("Sin rostros detectados.")
